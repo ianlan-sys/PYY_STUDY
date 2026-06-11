@@ -52,6 +52,11 @@ _admin_static = Path(__file__).parent / "admin" / "static"
 if _admin_static.exists():
     app.mount("/admin-ui", StaticFiles(directory=str(_admin_static), html=True), name="admin-ui")
 
+@app.get("/")
+async def root():
+    return {"status": "ok", "service": "wixi-app", "docs": "/docs"}
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}

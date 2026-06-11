@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from admin.auth import create_token, require_admin, verify_password
 from database import get_db, now_iso
@@ -50,6 +50,7 @@ class QuestionUpdate(BaseModel):
 
 
 class ModelCreate(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     display_name: str
     model_name: str
     api_key: str
@@ -57,6 +58,7 @@ class ModelCreate(BaseModel):
 
 
 class ModelUpdate(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     display_name: str | None = None
     model_name: str | None = None
     api_key: str | None = None

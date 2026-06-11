@@ -45,8 +45,9 @@ _RE_INSERT_OR_REPLACE = re.compile(r"INSERT\s+OR\s+REPLACE", re.IGNORECASE)
 _RE_ON_CONFLICT = re.compile(r"ON\s+CONFLICT\s*\([^)]*\)\s+DO\s+UPDATE\s+SET", re.IGNORECASE)
 _RE_EXCLUDED = re.compile(r"\bexcluded\.(\w+)", re.IGNORECASE)
 # 仅给小写列名 key 加反引号（KEY 是 MySQL 保留字）。大小写敏感，避免误伤生成的
-# "ON DUPLICATE KEY UPDATE" 里的大写 KEY；\b 保证不匹配 api_key 等。
-_RE_KEY_COL = re.compile(r"\bkey\b")
+# "ON DUPLICATE KEY UPDATE" 里的大写 KEY；\b 保证不匹配 api_key 等；前后负向断言
+# 跳过已被反引号包裹的 `key`（如 MySQL DDL 里已手写的），避免重复加成 ``key``。
+_RE_KEY_COL = re.compile(r"(?<!`)\bkey\b(?!`)")
 
 
 def translate_sql(sql: str) -> str:

@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>模型配置 — 管理后台</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .sidebar { width: 200px; min-height: 100vh; background: #1e3a5f; }
+    .sidebar a { color: rgba(255,255,255,0.75); text-decoration: none; display: block; padding: 10px 16px; border-radius: 6px; margin: 2px 8px; }
+    .sidebar a:hover, .sidebar a.active { background: rgba(255,255,255,0.15); color: #fff; }
+    .brand { color: #fff; font-weight: 700; padding: 20px 16px 12px; font-size: 0.9rem; }
+    .badge-active { background: #198754; }
+  </style>
+</head>
+<body class="bg-light">
+  <div class="d-flex">
+    <div class="sidebar d-flex flex-column">
+      <div class="brand">Python 管理台</div>
+      <a href="dashboard.html">数据统计</a>
+      <a href="users.html">用户管理</a>
+      <a href="sessions.html">会话管理</a>
+      <a href="lessons.html">课程管理</a>
+      <a href="questions.html">题目管理</a>
+      <a href="prompts.html">Prompt 管理</a>
+      <a href="config.html" class="active">模型配置</a>
+      <div class="mt-auto p-2">
+        <button class="btn btn-sm btn-outline-light w-100" onclick="logout()">退出</button>
+      </div>
+    </div>
+
+    <div class="flex-grow-1 p-4">
+
+      <!-- 模型管理 -->
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h5 class="fw-bold mb-0">模型管理</h5>
+        <button class="btn btn-primary btn-sm" onclick="openCreate()">+ 新增模型</button>
+      </div>
+      <p class="text-muted small mb-3">激活的模型将立即用于所有 AI 请求（无需重启）。不能删除当前激活的模型。</p>
+
+      <div class="card mb-4">
+        <div class="card-body p-0">
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
+              <tr><th>显示名称</th><th>模型 ID</th><th>Base URL</th><th>API Key</th><th>状态</th><th></th></tr>
+            </thead>
+            <tbody id="modelTable"><tr><td colspan="6" class="text-center text-muted py-3">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 其他配置 -->
+      <h5 class="fw-bold mb-2">其他配置</h5>
+      <div class="alert alert-secondary small mb-3">以下配置为备用 fallback（无激活模型时使用）。</div>
+      <div class="card">
+        <div class="card-body" id="configList"><div class="text-muted small">加载中…</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新增 / 编辑模型 Modal -->
+  <div class="modal fade" id="modelModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title fw-bold" id="modalTitle">新增模型</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="editModelId">
+          <div class="mb-2">
+            <label class="form-label">显示名称</label>
+            <input id="fDisplayName" class="form-control" placeholder="例：DeepSeek Chat">
+          </div>
+          <div class="mb-2">
+            <label class="form-label">模型 ID</label>
+            <input id="fModelName" class="form-control font-monospace" placeholder="例：deepseek-chat">
+          </div>
+          <div class="mb-2">
+            <label class="form-label">API Key</label>
+            <input id="fApiKey" class="form-control font-monospace" type="password" placeholder="sk-…（编辑时留空表示不修改）">
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Base URL</label>
+            <input id="fBaseUrl" class="form-control font-monospace" placeholder="https://api.deepseek.com">
+          </div>
+          <div id="modelFormError" class="alert alert-danger d-none small mt-2"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+          <button class="btn btn-primary" id="saveModelBtn" onclick="saveModel()">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    const TOKEN = localStorage.getItem('admin_token')
+    if (!TOKEN) location.href = 'index.html'
+    const H = { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }
+    const modelModal = new bootstrap.Modal(document.getElementById('modelModal'))
+
+    async function apiFetch(path, opts = {}) {
+      const res = await fetch(path, { ...opts, headers: H })
+      if (res.status === 401) { localStorage.removeItem('admin_token'); location.href = 'index.html' }
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    }
+    function logout() { localStorage.removeItem('admin_token'); location.href = 'index.html' }
+
+    // ─── 模型管理 ───────────────────────────────────────────
+    async function loadModels() {
+      const data = await apiFetch('/admin/models')
+      document.getElementById('modelTable').innerHTML = data.length ? data.map(m => `
+        <tr>
+          <td>${m.display_name}</td>
+          <td class="font-monospace small">${m.model_name}</td>
+          <td class="font-monospace small text-muted">${m.base_url}</td>
+          <td class="font-monospace small text-muted">${m.api_key_masked}</td>
+          <td>${m.is_active ? '<span class="badge badge-active text-white">激活</span>' : '<span class="badge bg-secondary">未激活</span>'}</td>
+          <td class="d-flex gap-1 flex-wrap">
+            ${m.is_active ? '' : `<button class="btn btn-sm btn-success" onclick="activateModel(${m.id})">激活</button>`}
+            <button class="btn btn-sm btn-outline-secondary" onclick="editModel(${m.id})">编辑</button>
+            ${m.is_active ? '' : `<button class="btn btn-sm btn-outline-danger" onclick="deleteModel(${m.id})">删除</button>`}
+          </td>
+        </tr>`).join('') :
+        '<tr><td colspan="6" class="text-center text-muted py-3">暂无模型，请新增</td></tr>'
+    }
+
+    let _models = []
+    async function editModel(id) {
+      _models = await apiFetch('/admin/models')
+      const m = _models.find(x => x.id === id)
+      if (!m) return
+      document.getElementById('editModelId').value = id
+      document.getElementById('fDisplayName').value = m.display_name
+      document.getElementById('fModelName').value = m.model_name
+      document.getElementById('fApiKey').value = ''
+      document.getElementById('fBaseUrl').value = m.base_url
+      document.getElementById('modalTitle').textContent = '编辑模型'
+      document.getElementById('modelFormError').classList.add('d-none')
+      modelModal.show()
+    }
+
+    function openCreate() {
+      document.getElementById('editModelId').value = ''
+      document.getElementById('fDisplayName').value = ''
+      document.getElementById('fModelName').value = ''
+      document.getElementById('fApiKey').value = ''
+      document.getElementById('fBaseUrl').value = 'https://api.deepseek.com'
+      document.getElementById('modalTitle').textContent = '新增模型'
+      document.getElementById('modelFormError').classList.add('d-none')
+      modelModal.show()
+    }
+
+    async function saveModel() {
+      const id = document.getElementById('editModelId').value
+      const display_name = document.getElementById('fDisplayName').value.trim()
+      const model_name = document.getElementById('fModelName').value.trim()
+      const api_key = document.getElementById('fApiKey').value.trim()
+      const base_url = document.getElementById('fBaseUrl').value.trim()
+      const errEl = document.getElementById('modelFormError')
+      if (!display_name || !model_name || !base_url) {
+        errEl.textContent = '显示名称、模型 ID、Base URL 不能为空'; errEl.classList.remove('d-none'); return
+      }
+      if (!id && !api_key) {
+        errEl.textContent = '新增时必须填写 API Key'; errEl.classList.remove('d-none'); return
+      }
+      errEl.classList.add('d-none')
+      const btn = document.getElementById('saveModelBtn')
+      btn.disabled = true; btn.textContent = '保存中…'
+      try {
+        const body = { display_name, model_name, base_url }
+        if (api_key) body.api_key = api_key
+        if (!id && !body.api_key) body.api_key = ''
+        if (id) {
+          await apiFetch(`/admin/models/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+        } else {
+          await apiFetch('/admin/models', { method: 'POST', body: JSON.stringify(body) })
+        }
+        modelModal.hide()
+        _models = []
+        await loadModels()
+      } catch(e) {
+        errEl.textContent = '保存失败：' + e.message; errEl.classList.remove('d-none')
+      } finally {
+        btn.disabled = false; btn.textContent = '保存'
+      }
+    }
+
+    async function activateModel(id) {
+      try {
+        await apiFetch(`/admin/models/${id}/activate`, { method: 'POST' })
+        await loadModels()
+      } catch(e) { alert('激活失败：' + e.message) }
+    }
+
+    async function deleteModel(id) {
+      if (!confirm('确定删除该模型？')) return
+      try {
+        await apiFetch(`/admin/models/${id}`, { method: 'DELETE' })
+        await loadModels()
+      } catch(e) { alert('删除失败：' + e.message) }
+    }
+
+    // ─── 其他配置 ────────────────────────────────────────────
+    const KEY_LABEL = { ai_model: 'AI 模型名称（fallback）', ai_base_url: 'API Base URL（fallback）' }
+    const KEY_HINT  = { ai_model: '例：deepseek-chat', ai_base_url: '例：https://api.deepseek.com' }
+
+    async function saveConfig(key) {
+      const value = document.getElementById('inp_' + key).value.trim()
+      const btn = document.getElementById('btn_' + key)
+      btn.disabled = true; btn.textContent = '保存中…'
+      try {
+        await apiFetch('/admin/config/' + key, { method: 'PUT', body: JSON.stringify({ value }) })
+        btn.textContent = '已保存'
+        setTimeout(() => { btn.textContent = '保存'; btn.disabled = false }, 2000)
+      } catch(e) { btn.textContent = '保存失败'; btn.disabled = false }
+    }
+
+    apiFetch('/admin/config').then(items => {
+      document.getElementById('configList').innerHTML = items.map(c => `
+        <div class="mb-3">
+          <label class="form-label fw-semibold">${KEY_LABEL[c.key] || c.key}</label>
+          <div class="d-flex gap-2">
+            <input id="inp_${c.key}" class="form-control font-monospace" value="${c.value}" placeholder="${KEY_HINT[c.key]||''}">
+            <button id="btn_${c.key}" class="btn btn-primary" style="white-space:nowrap" onclick="saveConfig('${c.key}')">保存</button>
+          </div>
+          <div class="text-muted small mt-1">最后更新：${c.updated_at.slice(0,16)}</div>
+        </div>`).join('')
+    })
+
+    loadModels()
+  </script>
+</body>
+</html>

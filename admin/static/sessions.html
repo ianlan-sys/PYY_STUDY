@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>会话管理 — 管理后台</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .sidebar { width: 200px; min-height: 100vh; background: #1e3a5f; }
+    .sidebar a { color: rgba(255,255,255,0.75); text-decoration: none; display: block; padding: 10px 16px; border-radius: 6px; margin: 2px 8px; }
+    .sidebar a:hover, .sidebar a.active { background: rgba(255,255,255,0.15); color: #fff; }
+    .brand { color: #fff; font-weight: 700; padding: 20px 16px 12px; font-size: 0.9rem; }
+    .msg-user { background: #e8f0fe; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; }
+    .msg-assistant { background: #f5f5f5; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; }
+  </style>
+</head>
+<body class="bg-light">
+  <div class="d-flex">
+    <div class="sidebar d-flex flex-column">
+      <div class="brand">Python 管理台</div>
+      <a href="dashboard.html">数据统计</a>
+      <a href="users.html">用户管理</a>
+      <a href="sessions.html" class="active">会话管理</a>
+      <a href="lessons.html">课程管理</a>
+      <a href="questions.html">题目管理</a>
+      <a href="prompts.html">Prompt 管理</a>
+      <a href="config.html">模型配置</a>
+      <div class="mt-auto p-2">
+        <button class="btn btn-sm btn-outline-light w-100" onclick="logout()">退出</button>
+      </div>
+    </div>
+    <div class="flex-grow-1 p-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold mb-0">会话管理</h5>
+        <select id="modeFilter" class="form-select form-select-sm" style="width:140px" onchange="loadSessions(1)">
+          <option value="">全部模式</option>
+          <option value="chat">通用问答</option>
+          <option value="code">代码解释</option>
+          <option value="error">错误诊断</option>
+        </select>
+      </div>
+      <div class="card">
+        <div class="card-body p-0">
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
+              <tr><th>用户</th><th>模式</th><th>首条问题</th><th>消息数</th><th>时间</th><th></th></tr>
+            </thead>
+            <tbody id="sessionTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <nav class="mt-3"><ul class="pagination pagination-sm justify-content-end" id="pagination"></ul></nav>
+    </div>
+  </div>
+  <div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title fw-bold">对话详情</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="detailBody" style="max-height:60vh;overflow-y:auto"></div>
+      </div>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    const TOKEN = localStorage.getItem('admin_token')
+    if (!TOKEN) location.href = 'index.html'
+    const H = { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }
+    async function apiFetch(path, opts = {}) {
+      const res = await fetch(path, { ...opts, headers: H })
+      if (res.status === 401) { localStorage.removeItem('admin_token'); location.href = 'index.html' }
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    }
+    function logout() { localStorage.removeItem('admin_token'); location.href = 'index.html' }
+    const MODE_LABEL = { chat: '问答', code: '代码', error: '报错' }
+    const modal = new bootstrap.Modal(document.getElementById('detailModal'))
+    async function loadSessions(page = 1) {
+      const mode = document.getElementById('modeFilter').value
+      const data = await apiFetch(`/admin/sessions?page=${page}${mode ? '&mode='+mode : ''}`)
+      document.getElementById('sessionTableBody').innerHTML = data.items.map(s => `
+        <tr>
+          <td>${s.nickname || '—'}</td>
+          <td><span class="badge bg-secondary">${MODE_LABEL[s.mode] || s.mode}</span></td>
+          <td class="small">${(s.first_question||'').slice(0,40)}</td>
+          <td>${s.message_count}</td>
+          <td class="small text-muted">${s.created_at.slice(0,16)}</td>
+          <td><button class="btn btn-sm btn-outline-primary" onclick="viewDetail(${s.id})">查看</button></td>
+        </tr>`).join('')
+      const pages = Math.ceil(data.total / 20)
+      const pag = document.getElementById('pagination')
+      pag.innerHTML = ''
+      for (let i = 1; i <= Math.min(pages, 10); i++)
+        pag.innerHTML += `<li class="page-item ${i===page?'active':''}"><a class="page-link" href="#" onclick="loadSessions(${i})">${i}</a></li>`
+    }
+    async function viewDetail(id) {
+      const data = await apiFetch(`/admin/sessions/${id}`)
+      document.getElementById('detailBody').innerHTML = data.messages.map(m =>
+        `<div class="msg-${m.role}"><small class="text-muted fw-bold">${m.role==='user'?'用户':'AI'}</small><div>${m.content}</div></div>`
+      ).join('')
+      modal.show()
+    }
+    loadSessions(1)
+  </script>
+</body>
+</html>

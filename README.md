@@ -1,124 +1,49 @@
-# wxcloudrun-flask
-[![GitHub license](https://img.shields.io/github/license/WeixinCloud/wxcloudrun-express)](https://github.com/WeixinCloud/wxcloudrun-express)
-![GitHub package.json dependency version (prod)](https://img.shields.io/badge/python-3.7.3-green)
+# Wixi App LLM — 后端（微信云托管 / FastAPI）
 
-微信云托管 python Flask 框架模版，实现简单的计数器读写接口，使用云托管 MySQL 读写、记录计数值。
+Python 学习小程序的后端服务，FastAPI + SQLite + DeepSeek。通过微信云托管以 Docker 方式部署。
 
-![](https://qcloudimg.tencent-cloud.cn/raw/be22992d297d1b9a1a5365e606276781.png)
+> 注意：本仓库虽由「Flask 模板」创建，但实际运行的是 **FastAPI**。云托管按 Dockerfile 构建，不依赖框架类型。
 
-
-## 快速开始
-前往 [微信云托管快速开始页面](https://developers.weixin.qq.com/miniprogram/dev/wxcloudrun/src/basic/guide.html)，选择相应语言的模板，根据引导完成部署。
-
-## 本地调试
-下载代码在本地调试，请参考[微信云托管本地调试指南](https://developers.weixin.qq.com/miniprogram/dev/wxcloudrun/src/guide/debug/)
-
-## 实时开发
-代码变动时，不需要重新构建和启动容器，即可查看变动后的效果。请参考[微信云托管实时开发指南](https://developers.weixin.qq.com/miniprogram/dev/wxcloudrun/src/guide/debug/dev.html)
-
-## Dockerfile最佳实践
-请参考[如何提高项目构建效率](https://developers.weixin.qq.com/miniprogram/dev/wxcloudrun/src/scene/build/speed.html)
-
-## 目录结构说明
-
-~~~
-.
-├── Dockerfile dockerfile       dockerfile
-├── README.md README.md         README.md文件
-├── container.config.json       模板部署「服务设置」初始化配置（二开请忽略）
-├── requirements.txt            依赖包文件
-├── config.py                   项目的总配置文件  里面包含数据库 web应用 日志等各种配置
-├── run.py                      flask项目管理文件 与项目进行交互的命令行工具集的入口
-└── wxcloudrun                  app目录
-    ├── __init__.py             python项目必带  模块化思想
-    ├── dao.py                  数据库访问模块
-    ├── model.py                数据库对应的模型
-    ├── response.py             响应结构构造
-    ├── templates               模版目录,包含主页index.html文件
-    └── views.py                执行响应的代码所在模块  代码逻辑处理主要地点  项目大部分代码在此编写
-~~~
-
-
-
-## 服务 API 文档
-
-### `GET /api/count`
-
-获取当前计数
-
-#### 请求参数
-
-无
-
-#### 响应结果
-
-- `code`：错误码
-- `data`：当前计数值
-
-##### 响应结果示例
-
-```json
-{
-  "code": 0,
-  "data": 42
-}
-```
-
-#### 调用示例
+## 结构
 
 ```
-curl https://<云托管服务域名>/api/count
+main.py                 FastAPI 入口（app）
+database.py             SQLite 初始化与连接（init_db 自动建表）
+models.py               数据模型
+routers/                ai / assessment / users / progress / sessions / admin / lessons 路由
+services/               deepseek（AI 调用）、prompts
+admin/static/           后台管理静态页（挂载在 /admin-ui）
+Dockerfile              云托管构建文件，监听端口 80
+container.config.json   模板初始部署的服务设置（端口 80）
 ```
 
+## 部署到微信云托管
 
+1. 代码推送到本仓库（已与云托管关联）后，云托管自动触发构建与发布。
+2. 在云托管「服务设置」中确认 **监听端口 = 80**（与 Dockerfile 的 `EXPOSE 80` 一致）。
+3. 配置以下**环境变量**（不要写进代码/仓库）：
 
-### `POST /api/count`
+   | 变量 | 说明 |
+   |---|---|
+   | `DEEPSEEK_API_KEY` | DeepSeek 真实密钥（**必填**） |
+   | `DEEPSEEK_BASE_URL` | 默认 `https://api.deepseek.com` |
+   | `ALLOWED_ORIGINS` | CORS 允许来源，默认 `*` |
+   | `JWT_SECRET` | 后台登录 JWT 签名密钥（**改成随机串**） |
+   | `ADMIN_USERNAME` | 后台用户名，默认 `admin` |
+   | `ADMIN_PASSWORD_HASH` | 后台密码 bcrypt 哈希 |
 
-更新计数，自增或者清零
+4. **数据持久化（重要）**：应用用 SQLite，库文件在 `/data/app.db`。容器磁盘是临时的，重启/缩容到 0 会丢数据。如需持久化，在云托管挂载「文件存储(NFS)」到 `/data`；或改用云数据库 MySQL。
 
-#### 请求参数
+## 健康检查
 
-- `action`：`string` 类型，枚举值
-  - 等于 `"inc"` 时，表示计数加一
-  - 等于 `"clear"` 时，表示计数重置（清零）
+`GET /health` → `{"status": "ok"}`
 
-##### 请求参数示例
+## 本地开发
 
-```
-{
-  "action": "inc"
-}
-```
-
-#### 响应结果
-
-- `code`：错误码
-- `data`：当前计数值
-
-##### 响应结果示例
-
-```json
-{
-  "code": 0,
-  "data": 42
-}
+```bash
+pip install -r requirements.txt
+cp .env.example .env   # 填入真实密钥
+uvicorn main:app --reload --port 8000
 ```
 
-#### 调用示例
-
-```
-curl -X POST -H 'content-type: application/json' -d '{"action": "inc"}' https://<云托管服务域名>/api/count
-```
-
-## 使用注意
-如果不是通过微信云托管控制台部署模板代码，而是自行复制/下载模板代码后，手动新建一个服务并部署，需要在「服务设置」中补全以下环境变量，才可正常使用，否则会引发无法连接数据库，进而导致部署失败。
-- MYSQL_ADDRESS
-- MYSQL_PASSWORD
-- MYSQL_USERNAME
-以上三个变量的值请按实际情况填写。如果使用云托管内MySQL，可以在控制台MySQL页面获取相关信息。
-
-
-
-## License
-
-[MIT](./LICENSE)
+小程序前端 `miniapp/utils/api.js` 的 `BASE_URL` 需改为云托管分配的服务域名。
